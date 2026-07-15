@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { readFile, stat } from "node:fs/promises";
-import { RunSummary } from "./types.js";
+import { ArtifactSummary, RunSummary } from "./types.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -16,6 +16,24 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function artifactFromEvent(object: JsonObject, runId: string, sessionId?: string): ArtifactSummary | undefined {
+  const artifactId = stringValue(object.artifactId);
+  const blobKey = stringValue(object.blobKey);
+  const resolvedSessionId = stringValue(object.sessionId) ?? sessionId;
+  const resolvedRunId = stringValue(object.runId) ?? runId;
+  if (!artifactId || !blobKey || !resolvedSessionId) return undefined;
+  return {
+    artifactId,
+    runId: resolvedRunId,
+    sessionId: resolvedSessionId,
+    blobKey,
+    name: stringValue(object.name),
+    title: stringValue(object.title),
+    mimeType: stringValue(object.mimeType),
+    sizeBytes: numberValue(object.sizeBytes),
+  };
 }
 
 function getPath(obj: JsonObject, path: string[]): unknown {
@@ -100,6 +118,7 @@ export async function parseRunLog(filePath: string): Promise<RunSummary> {
     filePath,
     fileMtimeIso: fileStat.mtime.toISOString(),
     status: "unknown",
+    artifacts: [],
     parseWarnings: [],
   };
 
@@ -128,13 +147,12 @@ export async function parseRunLog(filePath: string): Promise<RunSummary> {
     const timestamp = eventTimestamp(object);
     summary.sessionId ??= sessionIdFromEvent(object);
 
-    if (timestamp && !summary.requestedAt) {
-      summary.requestedAt = timestamp;
-    }
-
     if (name === "run.requested") {
       sawRequested = true;
       if (timestamp) summary.requestedAt = timestamp;
+      const actor = asObject(object.actor);
+      if (actor) summary.actor = { email: stringValue(actor.email) };
+      summary.prompt = stringValue(object.prompt);
     } else if (name === "run.completed") {
       sawCompleted = true;
       if (timestamp) summary.completedAt = timestamp;
@@ -156,6 +174,9 @@ export async function parseRunLog(filePath: string): Promise<RunSummary> {
     } else if (name === "run.failed") {
       sawFailed = true;
       if (timestamp) summary.failedAt = timestamp;
+    } else if (name === "artifact.created") {
+      const artifact = artifactFromEvent(object, runId, summary.sessionId);
+      if (artifact) summary.artifacts.push(artifact);
     }
   }
 

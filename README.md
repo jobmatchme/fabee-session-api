@@ -1,47 +1,43 @@
-# fabee-log-read-api
+# fabee-session-api
 
-Read-only HTTP API for Bee dashboard history backed by local `fabee-pi-agent` session snapshots and run logs.
+Cluster-internal session, ACL, history, audit, and artifact API for Fabee Shared Desk. It evolves the former `fabee-log-read-api` service and uses the existing `fabee-pi-agent` PVC; no second API or database is required.
 
-## Security model
+## Security
 
-- All endpoints except `GET /health` require a shared bearer token via `Authorization: Bearer <token>`.
-- `userKey` is mandatory on session reads.
-- Session access is restricted to IDs matching `${agentId}:web:${userKey}:` for listings and `*:web:${userKey}:*` for direct session reads.
-- Slack sessions (`:slack:`) and other users' sessions are never returned because only `:web:` sessions with the caller's `userKey` pass validation.
-- The API is read-only. It never deletes, prunes, or mutates session or log files.
+Every endpoint except `GET /health` requires the internal bearer token. `bee-web` is the only intended caller and passes the email verified by oauth2-proxy as `actorEmail`. The browser must never call this service directly. Unauthorized access to a session or artifact returns `404`.
+
+Only normalized `@jobmatch.me` identities are accepted. New sessions use opaque `ses_<uuid>` IDs and are permanently bound to `fabee-pi-agent`, route `fabee`, and transport `web`.
 
 ## Configuration
 
 ```sh
 READ_API_BEARER_TOKEN=change-me
-```
-
-Defaults:
-
-```sh
 READ_API_HOST=0.0.0.0
 READ_API_PORT=8080
 READ_API_RUN_LOG_DIR=/workspace/.fabee-pi-agent/logs
 READ_API_SESSION_DIR=/workspace/.fabee-pi-agent/sessions
+READ_API_ARTIFACT_DIR=/workspace/.bee-blob-store
 ```
+
+The `READ_API_*` environment names remain compatible with the previous sidecar deployment.
 
 ## API
 
-### `GET /health`
+All session routes below require `Authorization: Bearer <token>`.
 
-No auth required.
+- `GET /health`
+- `POST /sessions` — `{ "owner": "alice@jobmatch.me" }`
+- `GET /sessions?actorEmail=alice@jobmatch.me&limit=50` — returns `{ owned, shared }`
+- `GET /sessions/:sessionId?actorEmail=alice@jobmatch.me`
+- `GET /sessions/:sessionId/runs?actorEmail=alice@jobmatch.me`
+- `GET /sessions/:sessionId/capabilities?actorEmail=alice@jobmatch.me[&runActorEmail=bob@jobmatch.me]`
+- `PUT /sessions/:sessionId/collaborators` — `{ "actorEmail": "owner@jobmatch.me", "collaborators": ["bob@jobmatch.me"] }`
+- `POST /sessions/:sessionId/archive` — `{ "actorEmail": "owner@jobmatch.me" }`
+- `GET /sessions/:sessionId/artifacts/:artifactId?actorEmail=alice@jobmatch.me`
 
-### `GET /sessions?agentId=fabee-pi-agent&userKey=<userKey>&limit=50`
+Responses include server-derived `role` and `permissions`. Collaborator changes and archive actions append to `audit.jsonl`; metadata replacement is atomic. Artifact downloads resolve only persisted `artifact.created` blob keys inside the configured blob-store root.
 
-Returns matching web sessions sorted by most recent activity descending. Activity uses `context.jsonl`, `last_prompt.json`, and matching run log mtimes.
-
-### `GET /sessions/:sessionId?userKey=<userKey>`
-
-Returns one session summary plus parsed `context.jsonl` entries and `last_prompt.json` if present.
-
-### `GET /sessions/:sessionId/runs?userKey=<userKey>`
-
-Scans current JSONL run logs, filters by `sessionId`, and returns run summaries.
+The previous user-key listing/detail routes remain temporarily available for legacy web history until the explicit rollout cleanup.
 
 ## Development
 
@@ -51,18 +47,6 @@ npm run check
 npm start
 ```
 
-Example:
-
 ```sh
-export READ_API_BEARER_TOKEN=dev-token
-npm run build
-node dist/main.js
-curl http://127.0.0.1:8080/health
-curl -H 'Authorization: Bearer dev-token' 'http://127.0.0.1:8080/sessions?agentId=fabee-pi-agent&userKey=alice&limit=50'
-```
-
-Build image:
-
-```sh
-docker build -t ghcr.io/jobmatchme/fabee-log-read-api:0.1.0 .
+docker build -t ghcr.io/jobmatchme/fabee-session-api:0.1.2 .
 ```

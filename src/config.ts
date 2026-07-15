@@ -35,6 +35,7 @@ export function loadConfig(): ReadApiConfig {
     bearerToken: env("READ_API_BEARER_TOKEN"),
     runLogDir: env("READ_API_RUN_LOG_DIR", "/workspace/.fabee-pi-agent/logs"),
     sessionDir: env("READ_API_SESSION_DIR", "/workspace/.fabee-pi-agent/sessions"),
+    artifactDir: env("READ_API_ARTIFACT_DIR", "/workspace/.bee-blob-store"),
     apiVersion: process.env.READ_API_VERSION ?? packageVersion(),
   };
 }

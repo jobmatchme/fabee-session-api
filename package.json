@@ -1,10 +1,10 @@
 {
-  "name": "@jobmatchme/fabee-log-read-api",
-  "version": "0.1.1",
-  "description": "Read-only HTTP API for fabee-pi-agent session history and run logs.",
+  "name": "@jobmatchme/fabee-session-api",
+  "version": "0.1.2",
+  "description": "Internal session, ACL, history, and artifact API for fabee-pi-agent.",
   "type": "module",
   "bin": {
-    "fabee-log-read-api": "dist/main.js"
+    "fabee-session-api": "dist/main.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
